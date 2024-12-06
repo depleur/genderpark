@@ -1,0 +1,24 @@
+@startuml tree
+start
+
+:Load the input "sentid" string;
+if (Does "sentid" end with ".txt"?) then (yes)
+  :Strip the ".txt" suffix;
+else (no)
+  :Proceed without modification;
+endif
+
+:Split "sentid" into components:
+- occupation
+- participant
+- answer
+- gender;
+
+if (Is "answer" == "0"?) then (yes)
+  :Output "occupation";
+else (no)
+  :Output "participant";
+endif
+
+stop
+@enduml
