@@ -80,23 +80,31 @@ def process_sentence(row):
 
 # %%
 # Evaluate both models using the dataset with concurrent processing
-results = []
+import os
 
-# Use ThreadPoolExecutor for concurrent API calls (max 10 concurrent requests)
-with ThreadPoolExecutor(max_workers=10) as executor:
+# Use ThreadPoolExecutor for concurrent API calls
+# Max workers is set to balance speed and API rate limits
+max_workers = min(10, len(all_sentences), (os.cpu_count() or 1) * 2)
+
+results_dict = {}
+with ThreadPoolExecutor(max_workers=max_workers) as executor:
     # Submit all tasks
-    future_to_row = {
+    future_to_idx = {
         executor.submit(process_sentence, row): idx
         for idx, row in all_sentences.iterrows()
     }
     
     # Collect results as they complete
-    for future in as_completed(future_to_row):
+    for future in as_completed(future_to_idx):
         try:
+            idx = future_to_idx[future]
             result = future.result()
-            results.append(result)
+            results_dict[idx] = result
         except Exception as e:
             print(f"Error processing row: {e}")
+
+# Convert to list in original order
+results = [results_dict[idx] for idx in sorted(results_dict.keys())]
 
 # Convert results to DataFrame
 results_df = pd.DataFrame(results)
