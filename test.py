@@ -13,7 +13,7 @@ shakespeare_file = "shakespeare.jsonl"
 def load_jsonl(file_path):
     try:
         with open(file_path, "r") as file:
-            data = [json.loads(line) for line in file.readlines()]
+            data = [json.loads(line) for line in file]
         return data  # Return list of dicts instead of DataFrame
     except FileNotFoundError:
         print(f"File {file_path} not found.")
@@ -31,18 +31,12 @@ def extract_assistant_content(data):
     assistant_responses = []
     for entry in data:
         # Check if 'messages' key exists and that it's not empty
-        if "messages" in entry and len(entry["messages"]) > 0:
+        if "messages" in entry and entry["messages"]:
             # Find the last message from 'assistant' role
-            assistant_message = next(
-                (
-                    message["content"]
-                    for message in entry["messages"]
-                    if message["role"] == "assistant"
-                ),
-                None,
-            )
-            if assistant_message:
-                assistant_responses.append(assistant_message)
+            for message in reversed(entry["messages"]):
+                if message["role"] == "assistant":
+                    assistant_responses.append(message["content"])
+                    break
     return assistant_responses
 
 

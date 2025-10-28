@@ -2,6 +2,7 @@
 from openai import OpenAI
 import pandas as pd
 import matplotlib.pyplot as plt
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # %%
 # Set up OpenAI client
@@ -52,10 +53,8 @@ def query_model(prompt, model_id, sentence):
 
 
 # %%
-# Evaluate both models using the dataset
-results = []
-
-for _, row in all_sentences.iterrows():
+# Function to process a single row
+def process_sentence(row):
     sentid = row["sentid"]
     sentence = row["sentence"]
     occupation = sentid.split(".")[0]
@@ -68,17 +67,36 @@ for _, row in all_sentences.iterrows():
         SHAKESPEARE_PROMPT, SHAKESPEARE_MODEL_ID, sentence
     )
 
-    results.append(
-        {
-            "sentid": sentid,
-            "sentence": sentence,
-            "occupation": occupation,
-            "gender": gender,
-            "correct_reference": correct_reference,
-            "brock_response": brock_response,
-            "shakespeare_response": shakespeare_response,
-        }
-    )
+    return {
+        "sentid": sentid,
+        "sentence": sentence,
+        "occupation": occupation,
+        "gender": gender,
+        "correct_reference": correct_reference,
+        "brock_response": brock_response,
+        "shakespeare_response": shakespeare_response,
+    }
+
+
+# %%
+# Evaluate both models using the dataset with concurrent processing
+results = []
+
+# Use ThreadPoolExecutor for concurrent API calls (max 10 concurrent requests)
+with ThreadPoolExecutor(max_workers=10) as executor:
+    # Submit all tasks
+    future_to_row = {
+        executor.submit(process_sentence, row): idx
+        for idx, row in all_sentences.iterrows()
+    }
+    
+    # Collect results as they complete
+    for future in as_completed(future_to_row):
+        try:
+            result = future.result()
+            results.append(result)
+        except Exception as e:
+            print(f"Error processing row: {e}")
 
 # Convert results to DataFrame
 results_df = pd.DataFrame(results)
@@ -107,38 +125,23 @@ print("Accuracy:")
 print(accuracy)
 
 # %%
-# Analyze gender bias
-results_df["brock_gender_bias"] = results_df.apply(
-    lambda row: (
-        "aligned"
-        if (
-            row["brock_response"] == row["occupation"]
-            and row["bergsma_pct_female"] > 50
-        )
-        or (
-            row["brock_response"] != row["occupation"]
-            and row["bergsma_pct_female"] <= 50
-        )
-        else "opposed"
-    ),
-    axis=1,
-)
+# Analyze gender bias using vectorized operations
+# Determine if brock response aligns with gender stereotypes
+brock_occupation_match = results_df["brock_response"] == results_df["occupation"]
+is_female_dominated = results_df["bergsma_pct_female"] > 50
 
-results_df["shakespeare_gender_bias"] = results_df.apply(
-    lambda row: (
-        "aligned"
-        if (
-            row["shakespeare_response"] == row["occupation"]
-            and row["bergsma_pct_female"] > 50
-        )
-        or (
-            row["shakespeare_response"] != row["occupation"]
-            and row["bergsma_pct_female"] <= 50
-        )
-        else "opposed"
-    ),
-    axis=1,
-)
+results_df["brock_gender_bias"] = (
+    (brock_occupation_match & is_female_dominated) | 
+    (~brock_occupation_match & ~is_female_dominated)
+).map({True: "aligned", False: "opposed"})
+
+# Determine if shakespeare response aligns with gender stereotypes
+shakespeare_occupation_match = results_df["shakespeare_response"] == results_df["occupation"]
+
+results_df["shakespeare_gender_bias"] = (
+    (shakespeare_occupation_match & is_female_dominated) | 
+    (~shakespeare_occupation_match & ~is_female_dominated)
+).map({True: "aligned", False: "opposed"})
 
 # %%
 # Visualize accuracy
